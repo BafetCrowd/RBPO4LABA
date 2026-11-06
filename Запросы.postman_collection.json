@@ -1,0 +1,807 @@
+{
+  "info": {
+    "name": "РБПО Лаба4 — театр",
+    "description": "Выполнить всю коллекцию через Run. Учебный вход администратора: admin / admin. По умолчанию используется Basic ADMIN; в запросах покупателя выбран Basic USER. Первый запрос получает CSRF-токен, Postman сохраняет cookie автоматически. Покупатели, даты и id создаются при запуске; в конце свои записи удаляются. Если пароль изменён, укажите новый в переменной adminPassword.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{adminLogin}}", "type": "string"}, {"key": "password", "value": "{{adminPassword}}", "type": "string"}]},
+  "variable": [
+    {"key": "baseUrl", "value": "http://localhost:8083"},
+    {"key": "adminLogin", "value": "admin"},
+    {"key": "adminPassword", "value": "admin"},
+    {"key": "userLogin", "value": ""},
+    {"key": "userPassword", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "1. Регистрация, вход, CSRF и роли",
+      "item": [
+        {
+          "name": "01. Получить CSRF-токен и подготовить временные данные",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/csrf",
+            "auth": {"type": "noauth"}
+          },
+          "event": [
+            {"listen": "prerequest", "script": {"exec": [
+              "const метка = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);",
+              "pm.collectionVariables.set(\"userLogin\", \"buyer_\" + метка);",
+              "pm.collectionVariables.set(\"userPassword\", \"Lab4_\" + метка + \"aA9\");",
+              "pm.collectionVariables.set(\"otherLogin\", \"other_\" + метка);",
+              "const день = 24 * 60 * 60 * 1000;",
+              "pm.collectionVariables.set(\"futureStart\", new Date(Date.now() + 7 * день).toISOString().slice(0, 19));",
+              "pm.collectionVariables.set(\"pastStart\", new Date(Date.now() - 2 * день).toISOString().slice(0, 19));"
+            ]}},
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Токен получен\", () => pm.expect(pm.response.json().token).to.be.a(\"string\").and.not.empty);",
+              "pm.collectionVariables.set(\"csrfToken\", pm.response.json().token);"
+            ]}}
+          ]
+        },
+        {
+          "name": "02. Без входа каталог недоступен",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/plays",
+            "auth": {"type": "noauth"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 401\", () => pm.response.to.have.status(401));"
+            ]}}
+          ]
+        },
+        {
+          "name": "03. Регистрация без CSRF запрещена",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {"type": "noauth"},
+            "body": {"mode": "raw", "raw": "{\"имя\": \"Проверка: покупатель\", \"логин\": \"{{userLogin}}\", \"пароль\": \"{{userPassword}}\"}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 403\", () => pm.response.to.have.status(403));"
+            ]}}
+          ]
+        },
+        {
+          "name": "04. Слабый пароль не принимается",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {"type": "noauth"},
+            "body": {"mode": "raw", "raw": "{\"имя\": \"Проверка: покупатель\", \"логин\": \"{{userLogin}}\", \"пароль\": \"123\"}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 400\", () => pm.response.to.have.status(400));"
+            ]}}
+          ]
+        },
+        {
+          "name": "05. При регистрации нельзя назначить себе ADMIN",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {"type": "noauth"},
+            "body": {"mode": "raw", "raw": "{\"имя\": \"Проверка: покупатель\", \"логин\": \"{{userLogin}}\", \"пароль\": \"{{userPassword}}\", \"роль\": \"ADMIN\"}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 400\", () => pm.response.to.have.status(400));"
+            ]}}
+          ]
+        },
+        {
+          "name": "06. Зарегистрировать покупателя",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {"type": "noauth"},
+            "body": {"mode": "raw", "raw": "{\"имя\": \"Проверка: покупатель\", \"логин\": \"{{userLogin}}\", \"пароль\": \"{{userPassword}}\"}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"userId\", pm.response.json().id);",
+              "pm.test(\"роль\", () => pm.expect(pm.response.json().роль).to.equal(\"USER\"));",
+              "pm.test(\"активен\", () => pm.expect(pm.response.json().активен).to.equal(true));"
+            ]}}
+          ]
+        },
+        {
+          "name": "07. Повторная регистрация с тем же логином запрещена",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {"type": "noauth"},
+            "body": {"mode": "raw", "raw": "{\"имя\": \"Проверка: покупатель\", \"логин\": \"{{userLogin}}\", \"пароль\": \"{{userPassword}}\"}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 409\", () => pm.response.to.have.status(409));"
+            ]}}
+          ]
+        },
+        {
+          "name": "08. Покупатель видит свой профиль без пароля",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/me",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"роль\", () => pm.expect(pm.response.json().роль).to.equal(\"USER\"));",
+              "pm.test(\"Пароля нет в ответе\", () => pm.expect(pm.response.text().includes(\"пароль\")).to.equal(false));"
+            ]}}
+          ]
+        },
+        {
+          "name": "09. Вход с неверным паролем запрещён",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/me",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "IncorrectPassword9A", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 401\", () => pm.response.to.have.status(401));"
+            ]}}
+          ]
+        },
+        {
+          "name": "10. Покупателю недоступен список пользователей",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 403\", () => pm.response.to.have.status(403));"
+            ]}}
+          ]
+        },
+        {
+          "name": "11. Администратор блокирует покупателя",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/users/{{userId}}",
+            "body": {"mode": "raw", "raw": "{\"активен\": false}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"активен\", () => pm.expect(pm.response.json().активен).to.equal(false));"
+            ]}}
+          ]
+        },
+        {
+          "name": "12. Заблокированный покупатель не может войти",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/me",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 401\", () => pm.response.to.have.status(401));"
+            ]}}
+          ]
+        },
+        {
+          "name": "13. Администратор снимает блокировку",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/users/{{userId}}",
+            "body": {"mode": "raw", "raw": "{\"активен\": true}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"активен\", () => pm.expect(pm.response.json().активен).to.equal(true));"
+            ]}}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. ADMIN меняет каталог, USER читает и бронирует",
+      "item": [
+        {
+          "name": "14. Создать спектакль",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/plays",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"название\": \"Проверка: Ревизор\", \"длительностьМинут\": 100, \"возрастноеОграничение\": 12}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"playId\", pm.response.json().id);"
+            ]}}
+          ]
+        },
+        {
+          "name": "15. Список спектаклей",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/plays",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Получен список\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "16. Один спектакль",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/plays/{{playId}}",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Нужная запись\", () => pm.expect(pm.response.json().id).to.equal(Number(pm.collectionVariables.get(\"playId\"))));"
+            ]}}
+          ]
+        },
+        {
+          "name": "17. Изменить спектакль",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/plays/{{playId}}",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"длительностьМинут\": 110}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"длительностьМинут\", () => pm.expect(pm.response.json().длительностьМинут).to.equal(110));"
+            ]}}
+          ]
+        },
+        {
+          "name": "18. Покупателю запрещено менять спектакль",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/plays/{{playId}}",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]},
+            "body": {"mode": "raw", "raw": "{\"длительностьМинут\": 120}"},
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 403\", () => pm.response.to.have.status(403));"
+            ]}}
+          ]
+        },
+        {
+          "name": "19. Создать зал",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/theatre-halls",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"название\": \"Проверка: Малый зал\", \"числоМест\": 40}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"hallId\", pm.response.json().id);"
+            ]}}
+          ]
+        },
+        {
+          "name": "20. Список залов",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/theatre-halls",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Получен список\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "21. Один зал",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/theatre-halls/{{hallId}}",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Нужная запись\", () => pm.expect(pm.response.json().id).to.equal(Number(pm.collectionVariables.get(\"hallId\"))));"
+            ]}}
+          ]
+        },
+        {
+          "name": "22. Изменить зал",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/theatre-halls/{{hallId}}",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"числоМест\": 60}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"числоМест\", () => pm.expect(pm.response.json().числоМест).to.equal(60));"
+            ]}}
+          ]
+        },
+        {
+          "name": "23. Создать пользователя",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/users",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"имя\": \"Никита\", \"логин\": \"{{otherLogin}}\", \"пароль\": \"{{userPassword}}\", \"роль\": \"USER\"}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"otherUserId\", pm.response.json().id);"
+            ]}}
+          ]
+        },
+        {
+          "name": "24. Список пользователей",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users"
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Получен список\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "25. Один пользователь",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users/{{otherUserId}}"
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Нужная запись\", () => pm.expect(pm.response.json().id).to.equal(Number(pm.collectionVariables.get(\"otherUserId\"))));"
+            ]}}
+          ]
+        },
+        {
+          "name": "26. Изменить пользователя",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/users/{{otherUserId}}",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"имя\": \"Гришин Никита\"}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"имя\", () => pm.expect(pm.response.json().имя).to.equal(\"Гришин Никита\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "27. Создать будущий показ",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/performances",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"idСпектакля\": {{playId}}, \"idЗала\": {{hallId}}, \"начало\": \"{{futureStart}}\", \"базоваяЦена\": 500}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"performanceId\", pm.response.json().id);"
+            ]}}
+          ]
+        },
+        {
+          "name": "28. Список показов",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/performances",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Получен список\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "29. Один показ",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/performances/{{performanceId}}",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Нужная запись\", () => pm.expect(pm.response.json().id).to.equal(Number(pm.collectionVariables.get(\"performanceId\"))));"
+            ]}}
+          ]
+        },
+        {
+          "name": "30. Изменить цену показа",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/performances/{{performanceId}}",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"базоваяЦена\": 600}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"базоваяЦена\", () => pm.expect(pm.response.json().базоваяЦена).to.equal(600));"
+            ]}}
+          ]
+        },
+        {
+          "name": "31. Создать билет с бронью",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/tickets",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"idПоказа\": {{performanceId}}, \"номерМеста\": 1, \"idПользователя\": {{userId}}}"},
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"ticketId\", pm.response.json().id);"
+            ]}}
+          ]
+        },
+        {
+          "name": "32. Список билетов",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/tickets",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Получен список\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+              "pm.test(\"Только свои билеты\", () => pm.expect(pm.response.json().every(билет => билет.idПользователя === Number(pm.collectionVariables.get(\"userId\")))).to.equal(true));"
+            ]}}
+          ]
+        },
+        {
+          "name": "33. Один билет",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Нужная запись\", () => pm.expect(pm.response.json().id).to.equal(Number(pm.collectionVariables.get(\"ticketId\"))));"
+            ]}}
+          ]
+        },
+        {
+          "name": "34. Другой покупатель не видит чужой билет",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}",
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{otherLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 403\", () => pm.response.to.have.status(403));"
+            ]}}
+          ]
+        },
+        {
+          "name": "35. Изменить место в брони",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"номерМеста\": 2}"},
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"номерМеста\", () => pm.expect(pm.response.json().номерМеста).to.equal(2));"
+            ]}}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Покупка, возврат, отмена и завершение",
+      "item": [
+        {
+          "name": "36. Забронировать группе два места",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/performances/{{performanceId}}/group-booking",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"idПользователя\": {{userId}}, \"первоеМесто\": 3, \"количество\": 2}"},
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "const билеты = pm.response.json();",
+              "pm.test(\"Два билета\", () => pm.expect(билеты.length).to.equal(2));",
+              "pm.collectionVariables.set(\"groupFirstId\", билеты[0].id);",
+              "pm.collectionVariables.set(\"groupSecondId\", билеты[1].id);"
+            ]}}
+          ]
+        },
+        {
+          "name": "37. Купить одиночный билет",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/purchase",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"статус\", () => pm.expect(pm.response.json().статус).to.equal(\"КУПЛЕН\"));",
+              "pm.test(\"цена\", () => pm.expect(pm.response.json().цена).to.equal(600));"
+            ]}}
+          ]
+        },
+        {
+          "name": "38. Повторная покупка запрещена",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/purchase",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 409\", () => pm.response.to.have.status(409));"
+            ]}}
+          ]
+        },
+        {
+          "name": "39. Вернуть купленный билет",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/return",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"статус\", () => pm.expect(pm.response.json().статус).to.equal(\"ВОЗВРАЩЁН\"));",
+              "pm.test(\"суммаВозврата\", () => pm.expect(pm.response.json().суммаВозврата).to.equal(600));"
+            ]}}
+          ]
+        },
+        {
+          "name": "40. Купить один из групповых билетов",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/tickets/{{groupFirstId}}/purchase",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"статус\", () => pm.expect(pm.response.json().статус).to.equal(\"КУПЛЕН\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "41. Отменить показ и его билеты",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/performances/{{performanceId}}/cancel",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"статус\", () => pm.expect(pm.response.json().статус).to.equal(\"ОТМЕНЁН\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "42. Создать прошедший показ",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/performances",
+            "header": [{"key": "Content-Type", "value": "application/json"}, {"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "body": {"mode": "raw", "raw": "{\"idСпектакля\": {{playId}}, \"idЗала\": {{hallId}}, \"начало\": \"{{pastStart}}\", \"базоваяЦена\": 500}"}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 201\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"pastPerformanceId\", pm.response.json().id);"
+            ]}}
+          ]
+        },
+        {
+          "name": "43. Завершить прошедший показ",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/performances/{{pastPerformanceId}}/complete",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"статус\", () => pm.expect(pm.response.json().статус).to.equal(\"ЗАВЕРШЁН\"));"
+            ]}}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Удалить только созданные коллекцией записи",
+      "item": [
+        {
+          "name": "44. Удалить возвращённый билет",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "45. Удалить первый отменённый билет",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/tickets/{{groupFirstId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "46. Удалить второй отменённый билет",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/tickets/{{groupSecondId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}],
+            "auth": {"type": "basic", "basic": [{"key": "username", "value": "{{userLogin}}", "type": "string"}, {"key": "password", "value": "{{userPassword}}", "type": "string"}]}
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "47. Удалить отменённый показ",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/performances/{{performanceId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "48. Удалить завершённый показ",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/performances/{{pastPerformanceId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "49. Удалить второго пользователя",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/users/{{otherUserId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "50. Удалить зал",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/theatre-halls/{{hallId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "51. Удалить спектакль",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/plays/{{playId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        },
+        {
+          "name": "52. Удалить зарегистрированного покупателя",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/users/{{userId}}",
+            "header": [{"key": "X-CSRF-TOKEN", "value": "{{csrfToken}}"}]
+          },
+          "event": [
+            {"listen": "test", "script": {"exec": [
+              "pm.test(\"Код 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"Нет тела ответа\", () => pm.expect(pm.response.text()).to.equal(\"\"));"
+            ]}}
+          ]
+        }
+      ]
+    }
+  ]
+}
