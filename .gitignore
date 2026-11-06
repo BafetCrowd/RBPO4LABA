@@ -1,0 +1,10 @@
+target/
+.idea/
+.run/
+*.iml
+.DS_Store
+.env
+*.local.postman_environment.json
+данные/
+*.mv.db
+*.trace.db
